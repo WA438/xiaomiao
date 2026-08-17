@@ -1,0 +1,87 @@
+启动沙盒反向代理 (端口 8081)...
+[OK] 沙盒反向代理: http://0.0.0.0:8081
+  MT管理器填: http://localhost:8081
+✓ 代理已启动 (PID: 7887)
+  端口: 8081
+  MT管理器填: http://localhost:8081
+  当前目标: 沙盒离线（等待守护进程更新缓存）
+代理已在运行 (PID: 7887)
+[13:18:22] "PROPFIND / HTTP/1.1" 503 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 54460)
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 318, in _handle_request_noblock
+    self.process_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 349, in process_request
+    self.finish_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 766, in __init__
+    self.handle()
+    ~~~~~~~~~~~^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/http/server.py", line 496, in handle
+    self.handle_one_request()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/http/server.py", line 484, in handle_one_request
+    method()
+    ~~~~~~^^
+  File "<string>", line 106, in do_PROPFIND
+    self.handle_request('PROPFIND', body if body else None)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 32, in handle_request
+    self.wfile.write(json.dumps({
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+        'error': 'sandbox_offline',
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        'message': '沙盒隧道离线，等待守护进程更新缓存...'
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }).encode())
+    ^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 845, in write
+    self._sock.sendall(b)
+    ~~~~~~~~~~~~~~~~~~^^^
+BrokenPipeError: [Errno 32] Broken pipe
+----------------------------------------
+[13:18:22] "PROPFIND / HTTP/1.1" 503 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 36648)
+Traceback (most recent call last):
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 318, in _handle_request_noblock
+    self.process_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 349, in process_request
+    self.finish_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 766, in __init__
+    self.handle()
+    ~~~~~~~~~~~^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/http/server.py", line 496, in handle
+    self.handle_one_request()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/http/server.py", line 484, in handle_one_request
+    method()
+    ~~~~~~^^
+  File "<string>", line 106, in do_PROPFIND
+    self.handle_request('PROPFIND', body if body else None)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 32, in handle_request
+    self.wfile.write(json.dumps({
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+        'error': 'sandbox_offline',
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        'message': '沙盒隧道离线，等待守护进程更新缓存...'
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }).encode())
+    ^^^^^^^^^^^^
+  File "/data/data/com.termux/files/usr/lib/python3.14/socketserver.py", line 845, in write
+    self._sock.sendall(b)
+    ~~~~~~~~~~~~~~~~~~^^^
+BrokenPipeError: [Errno 32] Broken pipe
+----------------------------------------
+代理已在运行 (PID: 7887)

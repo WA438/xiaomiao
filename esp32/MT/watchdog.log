@@ -1,0 +1,23 @@
+/data/data/com.termux/files/home/xiaomiao-release/watchdog.sh: line 1: syntax error near unexpected token `('
+/data/data/com.termux/files/home/xiaomiao-release/watchdog.sh: line 1: `<h1>no tunnel here :(</h1>'
+[WATCHDOG] 启动 - Sun Aug 16 15:06:11 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Sun Aug 16 15:08:37 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Sun Aug 16 15:14:14 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Sun Aug 16 15:31:41 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Sun Aug 16 15:32:14 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 进程已死，重启中... (第 1 次) - Sun Aug 16 15:32:14 CST 2026
+[WATCHDOG] 已重启，PID=976
+[WATCHDOG] 启动成功
+[WATCHDOG] 启动 - Sun Aug 16 15:38:52 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Sun Aug 16 15:40:36 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Sun Aug 16 21:08:04 CST 2026
+[WATCHDOG] 监控 webdav_server.py
+[WATCHDOG] 启动 - Mon Aug 17 00:36:50 CST 2026
+[WATCHDOG] 监控 webdav_server.py
