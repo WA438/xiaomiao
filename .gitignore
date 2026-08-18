@@ -1,0 +1,9 @@
+*.bak.*
+*.tmp
+*.pid
+backups/
+cloud_backup/
+__pycache__/
+*.pyc
+xiaomiao_daemon.log
+logs/daily_*.json

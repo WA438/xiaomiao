@@ -1,0 +1,4 @@
+{
+  "风格": "中文、简洁、代码优先",
+  "环境": "Termux AArch64，模型/root/model.gguf，推理入口/usr/local/bin/llama-cli（simple-chat风格）"
+}
