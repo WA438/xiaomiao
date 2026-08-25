@@ -1,0 +1,113 @@
+<！doctype html>
+</div>
+</footer>
+<meta charset="UTF-8"/>
+<元名称="视口"内容="宽度=设备宽度，初始比例=1.0"/>
+<title>小苗·Dev控制面板</title>
+<style>
+正文{
+页边距：0；
+字体系列：-苹果系统，BlinkMacSystemFont，“Segoe UI”，Roboto，等宽；
+背景：#0f172a；
+颜色：#e5e7eb；
+线高：1.6；
+    }
+.container{
+最大宽度：900px；
+margin:0 auto；
+填料：60px20px；
+    }
+H1{
+font-size:2rem；
+边缘-底部：0.5rem；
+颜色：#38bdf8；
+    }
+H2{
+font-size:1.25rem；
+margin-top:2rem；
+颜色：#22d3ee；
+    }
+P{
+裕度：0.75rem0；
+    }
+UL{
+左侧填料：1.2rem；
+    }
+Li{
+裕度：0.4rem0；
+    }
+代码{
+背景：#1e293b；
+填充：2px6px；
+边界半径：4px；
+字体大小：0.9em；
+    }
+.tag{
+显示：内联块；
+背景：#1e40af；
+颜色：#e0f2fe；
+填料：4px10px；
+边界半径：999px；
+font-size:0.75rem；
+右边距：6px；
+margin-top:6px；
+    }
+页脚{
+margin-top:3rem；
+font-size:0.85rem；
+颜色：#94a3b8；
+border-top:1px实体#334155；
+垫顶：1rem；
+    }
+a{
+颜色：#38bdf8；
+文字修饰：无；
+    }
+a：悬停{
+文字装饰：下划线；
+    }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🛠     Xiaomiao Dev控制面板</h1>
+<p>
+个人开发者运维面板与Web终端项目，用于管理自部署服务、
+      执行服务器运维命令，并集成 AI 辅助代码生成与命令解析。
+</p>
+
+<div>
+<span class="tag">非商业项目</span>
+<span class="tag">DevOps工具</span>
+<span class="tag">AI辅助</span>
+<span class="tag">Web终端</span>
+</div>
+
+<h2>主要功能</h2>
+<ul>
+      <li>自托管服务状态监控与管理</li>
+<li>基于浏览器的Web终端/命令执行</li>
+<li>AI辅助代码生成与命令解释</li>
+<li>自动化部署脚本入口</li>
+</ul>
+
+<h2>部署与脚本</h2>
+    <p>项目包含自动化部署脚本：</p>
+<ul>
+<li><code>setup.sh</code>-环境初始化</li>
+<li><code>full-deploy.sh</code>-一键部署</li>
+</ul>
+
+<h2>项目状态</h2>
+<p>
+当前为个人技术项目阶段，持续迭代中。
+      仅用于个人学习与开发实践，不提供公开代理或商业服务。
+</p>
+
+<页脚>
+©小苗·个人开发者项目·
+<a href="https://github.com/WA438"target="_blank">GitHub</a>
+</footer>
+</div>
+</body>
+</html>
