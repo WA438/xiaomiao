@@ -1,0 +1,980 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ═══════════════════════════════════════════════
+#  xm — XiaoMiaoOS 快捷命令 v3.3
+#  改进：直接部署为系统命令，不再从沙盒下载自身
+#  安装: xm install  或  bash xm install
+#  用法:
+#    xm          自动检测更新+拉取+启动 (默认)
+#    xm check    只检测更新(云端→下载→检测设备→清理)
+#    xm pull     只拉取文件不启动
+#    xm start    只启动
+#    xm stop     停止所有服务
+#    xm status   查看运行状态
+#    xm log      查看日志
+#    xm update   强制拉取+重启
+#    xm fw       拉取OTA更新包(固件)
+#    xm base     拉取底包(全量刷机包)
+#    xm flash    拉取固件 + USB刷入设备
+#    xm ports    列出可用串口
+#    xm clean    清理旧文件释放空间
+#    xm seturl   手动设置沙盒地址
+#    xm rollback 查看设备OTA回滚状态
+#    xm install  安装xm为系统命令(部署到PATH)
+# ═══════════════════════════════════════════════
+
+DIR="$HOME/xiaomiao-release"
+FW_DIR="$DIR/firmware"
+CACHE_FILE="$DIR/last_url.txt"
+DISCOVERY="https://webhook.site/c61b1703-3603-42c5-abae-c371a0ddd8de"
+
+# ── 安装xm为系统命令 ──
+do_install() {
+    # 找到自身路径
+    local self="$0"
+    if [ "$self" = "bash" ] || [ "$self" = "sh" ]; then
+        # 通过 bash xm install 调用，需要用 BASH_SOURCE
+        self="${BASH_SOURCE[1]:-$DIR/xm}"
+    fi
+    # 如果还是相对路径，转为绝对路径
+    if [ "${self:0:1}" != "/" ]; then
+        self="$(cd "$(dirname "$self")" && pwd)/$(basename "$self")"
+    fi
+
+    echo "=== 安装 xm 命令 ==="
+    echo "  源文件: $self"
+    echo ""
+
+    # 安装到 Termux 的 bin 目录
+    local target=""
+    local dirs=("/data/data/com.termux/files/usr/bin" "$HOME/.local/bin" "/usr/local/bin")
+    for d in "${dirs[@]}"; do
+        if [ -d "$d" ] && [ -w "$d" ]; then
+            target="$d/xm"
+            break
+        fi
+    done
+
+    if [ -z "$target" ]; then
+        # 创建 ~/.local/bin
+        mkdir -p "$HOME/.local/bin"
+        target="$HOME/.local/bin/xm"
+    fi
+
+    # 复制自身到目标位置
+    cp "$self" "$target"
+    chmod +x "$target"
+    echo "  ✓ 已安装到: $target"
+    echo ""
+
+    # 检查是否在 PATH 中
+    if echo "$PATH" | grep -q "$(dirname "$target")"; then
+        echo "  ✓ 目录已在 PATH 中"
+    else
+        echo "  ⚠ 目录不在 PATH 中，需要添加"
+        echo ""
+        # 添加到 .bashrc / .zshrc
+        local rcfile=""
+        if [ -f "$HOME/.bashrc" ]; then
+            rcfile="$HOME/.bashrc"
+        elif [ -f "$HOME/.zshrc" ]; then
+            rcfile="$HOME/.zshrc"
+        fi
+        if [ -n "$rcfile" ]; then
+            if ! grep -q "local/bin" "$rcfile" 2>/dev/null; then
+                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$rcfile"
+                echo "  ✓ 已添加到 $rcfile"
+                echo "  请运行: source $rcfile"
+            fi
+        fi
+    fi
+    echo ""
+    # 验证
+    echo "=== 验证 ==="
+    if command -v xm &>/dev/null; then
+        echo "  ✓ xm 命令可用: $(command -v xm)"
+    else
+        echo "  ⚠ xm 命令需要重新打开终端或 source ~/.bashrc"
+        echo "  临时使用: $target"
+    fi
+    echo ""
+    echo "安装完成！以后直接在任意目录输入 xm 即可使用。"
+}
+
+# ── 检查URL是否可用（多端点测试）──
+check_url_alive() {
+    local url="$1"
+    # 尝试多个端点，任意一个能响应就算在线
+    # 1. /version.json (WebDAV主文件)
+    if curl -s --max-time 5 "$url/version.json" 2>/dev/null | grep -q '"product"' 2>/dev/null; then
+        return 0
+    fi
+    # 2. /health (如果有的话)
+    if curl -s --max-time 3 "$url/health" 2>/dev/null | head -c 20 | grep -qi "ok\|alive\|200" 2>/dev/null; then
+        return 0
+    fi
+    # 3. 根目录能返回任意内容（非HTML错误页）
+    local resp=$(curl -s --max-time 3 -o /dev/null -w "%{http_code}" "$url/" 2>/dev/null)
+    if [ "$resp" = "200" ] || [ "$resp" = "207" ]; then  # 207 = WebDAV multistatus
+        return 0
+    fi
+    return 1
+}
+
+# ── 获取沙盒地址（多重容错）──
+get_url_cached() {
+    # 1. 先读本地缓存
+    if [ -f "$CACHE_FILE" ]; then
+        local cached=$(cat "$CACHE_FILE" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$cached" ]; then
+            # 验证缓存URL是否可用
+            if check_url_alive "$cached"; then
+                echo "$cached"
+                return
+            fi
+            echo "  (缓存URL不可用: $cached)" >&2
+        fi
+    fi
+
+    # 2. 缓存不可用，尝试 webhook
+    local json=$(curl -s --max-time 10 "$DISCOVERY" 2>/dev/null)
+    if [ -n "$json" ]; then
+        local url=$(echo "$json" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('webdav_url','').rstrip('/'))" 2>/dev/null)
+        if [ -n "$url" ]; then
+            if check_url_alive "$url"; then
+                echo "$url" > "$CACHE_FILE"
+                echo "$url"
+                return
+            fi
+        fi
+    fi
+
+    # 3. webhook 也失败，尝试局域网扫描
+    #    手机连WiFi → 扫描同网段端口8080
+    local local_ip=$(ip addr show wlan0 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -1)
+    if [ -z "$local_ip" ]; then
+        local_ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2)
+    fi
+    if [ -n "$local_ip" ]; then
+        local subnet=$(echo "$local_ip" | cut -d. -f1-3)
+        echo "  扫描局域网 $subnet.1-254:8080 ..." >&2
+        for i in $(seq 1 254); do
+            local test_url="http://$subnet.$i:8080"
+            if curl -s --max-time 1 "$test_url/version.json" 2>/dev/null | grep -q '"product"' 2>/dev/null; then
+                echo "$test_url" > "$CACHE_FILE"
+                echo "  发现沙盒: $test_url" >&2
+                echo "$test_url"
+                return
+            fi
+        done
+    fi
+
+    # 4. 全部失败
+    echo ""
+}
+
+# ── 保存URL到缓存 ──
+save_url() {
+    echo "$1" > "$CACHE_FILE"
+}
+
+# ── 拉取单个文件 ──
+pull_file() {
+    local url="$1" name="$2"
+    curl -s --max-time 30 "$url/$name" -o "$DIR/$name.tmp" 2>/dev/null
+    if [ -s "$DIR/$name.tmp" ]; then
+        local first3=$(head -3 "$DIR/$name.tmp" 2>/dev/null)
+        if echo "$first3" | grep -qi "<!DOCTYPE\|<html\|<HTML\|<h1>\|tunnel here\|502 Bad\|503 Service\|404 Not Found\|Service Unavailable" 2>/dev/null; then
+            echo "  fail $name (HTML error page)"
+            rm -f "$DIR/$name.tmp"
+        elif echo "$name" | grep -q "\.sh$\|\.py$" 2>/dev/null; then
+            local first_line=$(head -1 "$DIR/$name.tmp" 2>/dev/null)
+            if echo "$first_line" | grep -q "^#\|^import\|^from\|^#!/" 2>/dev/null; then
+                mv "$DIR/$name.tmp" "$DIR/$name"
+                chmod +x "$DIR/$name" 2>/dev/null
+                echo "  ok $name"
+            else
+                echo "  fail $name (invalid content)"
+                rm -f "$DIR/$name.tmp"
+            fi
+        else
+            mv "$DIR/$name.tmp" "$DIR/$name"
+            echo "  ok $name"
+        fi
+    else
+        rm -f "$DIR/$name.tmp"
+        echo "  fail $name (empty)"
+    fi
+}
+
+# ── 拉取全部 ──
+do_pull() {
+    mkdir -p "$DIR" "$FW_DIR"
+    local url=$(get_url_cached)
+    if [ -z "$url" ]; then
+        echo "✗ 沙盒离线"
+        echo ""
+        echo "所有连接方式均失败:"
+        echo "  1. 本地缓存URL不可用"
+        echo "  2. webhook发现服务无响应"
+        echo "  3. 局域网扫描未找到服务"
+        echo ""
+        echo "解决方法:"
+        echo "  A. 手动设置沙盒地址:"
+        echo "     xm seturl https://xxx.lhr.life"
+        echo ""
+        echo "  B. 确认沙盒已启动 (在沙盒端运行 xm start)"
+        echo ""
+        echo "  C. 确认手机和沙盒在同一网络"
+        echo "     手机连WiFi后 xm 会自动扫描局域网"
+        return 1
+    fi
+
+    save_url "$url"
+    echo "沙盒: $url"
+    echo "拉取文件..."
+
+    # 拉取服务脚本（不含 xm 自身，xm 已通过 install 部署）
+    for f in start_all.sh webdav_server.py relay_server.sh xiaomiao_daemon.sh watchdog.sh tunnel_watchdog.py relay_client.sh zerotermux_setup.sh version.json; do
+        pull_file "$url" "$f"
+    done
+
+    echo "done"
+}
+
+# ── 从沙盒拉取底包(全量刷机包) ──
+do_base() {
+    mkdir -p "$FW_DIR"
+    local url=$(get_url_cached)
+    if [ -z "$url" ]; then
+        echo "✗ 沙盒离线"
+        local latest_local=$(ls -t "$FW_DIR"/xiaomiao_base_V*.bin 2>/dev/null | head -1)
+        if [ -n "$latest_local" ]; then
+            echo "  本地有底包: $(basename "$latest_local")"
+            echo "$latest_local"
+            return 0
+        fi
+        echo "  用 xm seturl <地址> 手动设置沙盒"
+        return 1
+    fi
+    save_url "$url"
+    echo "=== 拉取底包(全量刷机包) ==="
+    echo "沙盒: $url"
+    echo ""
+    # 确保 version.json 最新
+    curl -s --max-time 15 "$url/version.json" -o "$DIR/version.json.tmp" 2>/dev/null
+    if [ -s "$DIR/version.json.tmp" ]; then
+        mv "$DIR/version.json.tmp" "$DIR/version.json"
+    fi
+    local base_url=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['base']['url'])" 2>/dev/null)
+    local base_size=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['base']['size'])" 2>/dev/null)
+    local base_sha256=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['base']['sha256'])" 2>/dev/null)
+    local base_name=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['base']['name'])" 2>/dev/null)
+    if [ -z "$base_url" ]; then
+        echo "✗ version.json 中没有底包信息"
+        return 1
+    fi
+    local base_path="$FW_DIR/$base_name"
+    # 检查本地是否已有
+    if [ -f "$base_path" ]; then
+        local local_size=$(wc -c < "$base_path")
+        if [ "$local_size" = "$base_size" ]; then
+            echo "本地已有底包，跳过下载"
+            echo "  $base_name ($local_size bytes)"
+            echo "$base_path"
+            return 0
+        fi
+    fi
+    echo "下载底包 $base_name ..."
+    curl -s --max-time 120 "$url/$base_url" -o "$base_path.tmp" 2>/dev/null
+    if [ ! -s "$base_path.tmp" ]; then
+        echo "  ✗ 下载失败"
+        rm -f "$base_path.tmp"
+        return 1
+    fi
+    local dl_size=$(wc -c < "$base_path.tmp")
+    if [ "$dl_size" != "$base_size" ]; then
+        echo "  ✗ 大小不匹配: 期望 $base_size, 实际 $dl_size"
+        rm -f "$base_path.tmp"
+        return 1
+    fi
+    local dl_sha256=$(sha256sum "$base_path.tmp" | cut -d' ' -f1)
+    if [ "$dl_sha256" != "$base_sha256" ]; then
+        echo "  ✗ SHA256 校验失败"
+        rm -f "$base_path.tmp"
+        return 1
+    fi
+    echo "  ✓ SHA256 校验通过"
+    mv "$base_path.tmp" "$base_path"
+    echo "  ✓ 下载完成 ($dl_size bytes)"
+    echo ""
+    echo "底包用途: 首次刷机或恢复设备"
+    echo "刷入方法: esptool.py --port /dev/ttyUSB0 --baud 921600 write_flash 0x0 \"$base_path\""
+    echo "$base_path"
+}
+
+# ── 从沙盒拉取最新固件(OTA包) ──
+# 注意: 所有状态信息输出到stderr, 只有文件路径输出到stdout
+# 这样 do_flash 中 fw_path=$(do_fw) 只能拿到纯路径
+do_fw() {
+    mkdir -p "$FW_DIR"
+    local url=$(get_url_cached 2>/dev/null)
+    if [ -z "$url" ]; then
+        echo "✗ 沙盒离线" >&2
+        # 检查本地是否已有固件
+        local latest_local=$(ls -t "$FW_DIR"/xiaomiao_ota_V*.bin "$FW_DIR"/xiaomiao_V*.bin 2>/dev/null | head -1)
+        if [ -n "$latest_local" ]; then
+            echo "  使用本地缓存固件:" >&2
+            echo "  $(basename "$latest_local")" >&2
+            echo "$latest_local"
+            return 0
+        fi
+        echo "" >&2
+        echo "  用 xm seturl <地址> 手动设置沙盒" >&2
+        return 1
+    fi
+
+    save_url "$url"
+    echo "=== 从沙盒拉取最新固件 ===" >&2
+    echo "沙盒: $url" >&2
+    echo "" >&2
+
+    # 1. 拉取 version.json
+    echo "[1/3] 获取版本信息..." >&2
+    curl -s --max-time 15 "$url/version.json" -o "$DIR/version.json.tmp" 2>/dev/null
+    if [ ! -s "$DIR/version.json.tmp" ]; then
+        echo "  ✗ version.json 下载失败" >&2
+        rm -f "$DIR/version.json.tmp"
+        # 尝试使用本地缓存
+        if [ -f "$DIR/version.json" ]; then
+            echo "  使用本地缓存的version.json" >&2
+        else
+            return 1
+        fi
+    else
+        if ! python3 -c "import json;json.load(open('$DIR/version.json.tmp'))" 2>/dev/null; then
+            echo "  ✗ version.json 不是有效 JSON" >&2
+            rm -f "$DIR/version.json.tmp"
+            return 1
+        fi
+        mv "$DIR/version.json.tmp" "$DIR/version.json"
+    fi
+
+    # 解析新版两文件格式 (files.ota) 或旧版格式 (latest.url)
+    local fw_version=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest'].get('version','?'))" 2>/dev/null)
+    local fw_url=$(python3 -c "
+import json
+d=json.load(open('$DIR/version.json'))
+f=d['latest'].get('files',{})
+if 'ota' in f:
+    print(f['ota']['url'])
+elif 'url' in d['latest']:
+    print(d['latest']['url'])
+" 2>/dev/null)
+    local fw_size=$(python3 -c "
+import json
+d=json.load(open('$DIR/version.json'))
+f=d['latest'].get('files',{})
+if 'ota' in f:
+    print(f['ota']['size'])
+elif 'size' in d['latest']:
+    print(d['latest']['size'])
+" 2>/dev/null)
+    local fw_sha256=$(python3 -c "
+import json
+d=json.load(open('$DIR/version.json'))
+f=d['latest'].get('files',{})
+if 'ota' in f:
+    print(f['ota']['sha256'])
+elif 'sha256' in d['latest']:
+    print(d['latest']['sha256'])
+" 2>/dev/null)
+    local fw_name="xiaomiao_ota_V${fw_version}.bin"
+
+    echo "  ✓ 最新版本: v$fw_version" >&2
+    echo "  固件文件: $fw_url" >&2
+    echo "  大小: $fw_size bytes" >&2
+    echo "" >&2
+
+    # 2. 检查本地是否已有该版本
+    local fw_path="$FW_DIR/$fw_name"
+    if [ -f "$fw_path" ]; then
+        local local_size=$(wc -c < "$fw_path")
+        if [ "$local_size" = "$fw_size" ]; then
+            echo "[2/3] 本地已有相同版本，跳过下载" >&2
+            echo "  $fw_name ($local_size bytes)" >&2
+            echo "" >&2
+            echo "[3/3] 固件就绪" >&2
+            echo "$fw_path"
+            return 0
+        fi
+    fi
+
+    # 3. 下载固件
+    echo "[2/3] 下载固件 $fw_name ..." >&2
+    local full_url="$url/$fw_url"
+    curl -s --max-time 120 "$full_url" -o "$fw_path.tmp" 2>/dev/null
+
+    if [ ! -s "$fw_path.tmp" ]; then
+        echo "  ✗ 下载失败" >&2
+        rm -f "$fw_path.tmp"
+        return 1
+    fi
+
+    local dl_size=$(wc -c < "$fw_path.tmp")
+    if [ "$dl_size" != "$fw_size" ]; then
+        echo "  ✗ 大小不匹配: 期望 $fw_size, 实际 $dl_size" >&2
+        rm -f "$fw_path.tmp"
+        return 1
+    fi
+
+    if [ -n "$fw_sha256" ]; then
+        local dl_sha256=$(sha256sum "$fw_path.tmp" | cut -d' ' -f1)
+        if [ "$dl_sha256" != "$fw_sha256" ]; then
+            echo "  ✗ SHA256 校验失败" >&2
+            rm -f "$fw_path.tmp"
+            return 1
+        fi
+        echo "  ✓ SHA256 校验通过" >&2
+    fi
+
+    mv "$fw_path.tmp" "$fw_path"
+    echo "  ✓ 下载完成 ($dl_size bytes)" >&2
+    echo "" >&2
+
+    # 显示更新日志
+    echo "=== 更新日志 v$fw_version ===" >&2
+    python3 -c "
+import json
+d=json.load(open('$DIR/version.json'))
+for line in d['latest']['changelog']:
+    print('  - ' + line)
+" 2>/dev/null >&2
+    echo "" >&2
+
+    echo "[3/3] 固件就绪" >&2
+    echo "$fw_path"
+}
+
+# ── 查找串口设备 ──
+find_port() {
+    local port=""
+    for p in /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyACM0 /dev/ttyACM1; do
+        if [ -e "$p" ]; then
+            port="$p"
+            break
+        fi
+    done
+    echo "$port"
+}
+
+# ── 列出串口 ──
+do_ports() {
+    echo "=== 可用串口设备 ==="
+    local found=0
+    for p in /dev/ttyUSB* /dev/ttyACM*; do
+        if [ -e "$p" ]; then
+            echo "  $p"
+            found=1
+        fi
+    done
+    if [ "$found" = "0" ]; then
+        echo "  (未找到串口设备)"
+        echo ""
+        echo "提示:"
+        echo "  - 确保手机支持 USB OTG"
+        echo "  - 确保 USB 线支持数据传输"
+        echo "  - 喵比特连接后需要开机"
+    fi
+}
+
+# ── 拉取固件 + USB 刷入 ──
+do_flash() {
+    echo "╔══════════════════════════════════════╗"
+    echo "║  XiaoMiaoOS 固件刷入工具             ║"
+    echo "╚══════════════════════════════════════╝"
+    echo ""
+
+    # 1. 尝试拉取固件，失败则用本地缓存
+    local fw_path=$(do_fw)
+    if [ -z "$fw_path" ] || [ ! -f "$fw_path" ]; then
+        echo ""
+        echo "⚠ 沙盒离线，尝试使用本地缓存固件..."
+        # 查找本地最新固件（OTA包优先，兼容旧格式）
+        fw_path=$(ls -t "$FW_DIR"/xiaomiao_ota_V*.bin "$FW_DIR"/xiaomiao_V*.bin 2>/dev/null | head -1)
+        if [ -z "$fw_path" ] || [ ! -f "$fw_path" ]; then
+            echo "✗ 没有可用的固件文件"
+            echo ""
+            echo "解决方法:"
+            echo "  1. 手动下载固件放到: $FW_DIR/"
+            echo "  2. 或设置沙盒地址后重试: xm seturl <地址>"
+            echo "  3. 或用 xm fw 拉取固件后再刷入"
+            return 1
+        fi
+        echo "  ✓ 使用本地固件: $(basename "$fw_path")"
+        echo "  路径: $fw_path"
+        echo ""
+    fi
+    echo ""
+
+    # 2. 检查 esptool
+    echo "=== 检查 esptool ==="
+    if ! command -v esptool.py &>/dev/null; then
+        echo "  安装 esptool..."
+        pip install esptool --break-system-packages 2>/dev/null || pip install esptool 2>/dev/null
+    fi
+    if ! command -v esptool.py &>/dev/null; then
+        echo "  ✗ esptool 安装失败"
+        echo "  手动安装: pip install esptool"
+        return 1
+    fi
+    echo "  ✓ esptool 已就绪"
+    echo ""
+
+    # 3. 查找串口
+    echo "=== 查找设备 ==="
+    local port=$(find_port)
+    if [ -z "$port" ]; then
+        echo "  ✗ 未找到串口设备"
+        echo ""
+        do_ports
+        echo ""
+        echo "手动指定端口:"
+        echo "  esptool.py --port /dev/ttyUSB0 --baud 921600 write_flash 0x10000 \"$fw_path\""
+        return 1
+    fi
+    echo "  ✓ 设备端口: $port"
+    echo ""
+
+    # 4. 刷入
+    echo "=== 开始刷入 ==="
+    echo "  固件: $(basename "$fw_path")"
+    echo "  端口: $port"
+    echo "  地址: 0x10000"
+    echo "  波特: 921600"
+    echo "  安全: OTA自动回滚已启用"
+    echo ""
+
+    esptool.py --port "$port" --baud 921600 write_flash 0x10000 "$fw_path"
+    local ret=$?
+
+    echo ""
+    if [ $ret -eq 0 ]; then
+        echo "╔══════════════════════════════════════╗"
+        echo "║  ✓ 刷入成功！                        ║"
+        echo "╚══════════════════════════════════════╝"
+        echo ""
+        echo "下一步:"
+        echo "  1. 设备会自动重启"
+        echo "  2. 连接 WiFi: XiaoMiao-CFG"
+        echo "  3. 打开浏览器: http://192.168.4.1"
+        echo "  4. 在菜单 SYSTEM → Check Update 检查更新"
+    else
+        echo "╔══════════════════════════════════════╗"
+        echo "║  ✗ 刷入失败                          ║"
+        echo "╚══════════════════════════════════════╝"
+        echo ""
+        echo "可能原因:"
+        echo "  - 设备未进入下载模式 (按住 BOOT 键再上电)"
+        echo "  - USB 线不支持数据传输"
+        echo "  - 端口被其他程序占用"
+        echo ""
+        echo "重试: xm flash"
+    fi
+    return $ret
+}
+
+# ── 启动 ──
+do_start() {
+    if [ ! -f "$DIR/start_all.sh" ]; then
+        echo "✗ 缺少 start_all.sh，先运行: xm pull"
+        return 1
+    fi
+    bash "$DIR/start_all.sh"
+}
+
+# ── 停止 ──
+do_stop() {
+    pkill -f "watchdog.sh" 2>/dev/null
+    pkill -f "webdav_server.py" 2>/dev/null
+    bash "$DIR/relay_server.sh" stop 2>/dev/null
+    echo "stopped"
+}
+
+# ── 状态 ──
+do_status() {
+    echo "=== XiaoMiaoOS Status ==="
+    pgrep -f "webdav_server.py" >/dev/null 2>&1 && echo "  WebDAV:    RUNNING" || echo "  WebDAV:    STOPPED"
+    pgrep -f "relay_server.sh" >/dev/null 2>&1 && echo "  Relay:     RUNNING" || echo "  Relay:     STOPPED"
+    pgrep -f "watchdog.sh" >/dev/null 2>&1 && echo "  Watchdog:  RUNNING" || echo "  Watchdog:  STOPPED"
+
+    local url=$(get_url_cached 2>/dev/null)
+    [ -n "$url" ] && echo "  Sandbox:   ONLINE ($url)" || echo "  Sandbox:   OFFLINE"
+
+    echo ""
+    echo "=== 本地固件 ==="
+    if [ -d "$FW_DIR" ] && ls "$FW_DIR"/xiaomiao_*V*.bin >/dev/null 2>&1; then
+        for f in "$FW_DIR"/xiaomiao_base_V*.bin "$FW_DIR"/xiaomiao_ota_V*.bin "$FW_DIR"/xiaomiao_V*.bin; do
+            if [ -f "$f" ]; then
+                local sz=$(wc -c < "$f")
+                printf "  %-30s %s bytes\n" "$(basename "$f")" "$sz"
+            fi
+        done
+    else
+        echo "  (无)  用 xm fw 拉取"
+    fi
+}
+
+# ── 日志 ──
+do_log() {
+    tail -50 "$DIR/server.log" 2>/dev/null || echo "no log"
+}
+
+# ── 清理旧文件 ──
+do_clean() {
+    echo "=== XiaoMiaoOS 清理工具 ==="
+    echo ""
+    local total_freed=0
+
+    # 1. 清理旧固件（只保留最新OTA和底包）
+    echo "[1/4] 清理旧固件..."
+    if [ -d "$FW_DIR" ]; then
+        local latest_ota=$(ls -t "$FW_DIR"/xiaomiao_ota_V*.bin 2>/dev/null | head -1)
+        local latest_base=$(ls -t "$FW_DIR"/xiaomiao_base_V*.bin 2>/dev/null | head -1)
+        for f in "$FW_DIR"/xiaomiao_ota_V*.bin "$FW_DIR"/xiaomiao_base_V*.bin "$FW_DIR"/xiaomiao_V*.bin; do
+            if [ -f "$f" ]; then
+                # 保留最新的OTA包和底包
+                if [ "$f" = "$latest_ota" ] || [ "$f" = "$latest_base" ]; then
+                    echo "  keep $(basename "$f")"
+                else
+                    local sz=$(wc -c < "$f")
+                    rm -f "$f"
+                    echo "  del $(basename "$f") ($sz bytes)"
+                    total_freed=$((total_freed + sz))
+                fi
+            fi
+        done
+    fi
+    echo ""
+
+    # 2. 清理临时文件
+    echo "[2/4] 清理临时文件..."
+    local tmp_count=0
+    for f in "$DIR"/*.tmp "$DIR"/*.tmp.*; do
+        if [ -f "$f" ]; then
+            local sz=$(wc -c < "$f")
+            rm -f "$f"
+            tmp_count=$((tmp_count + 1))
+            total_freed=$((total_freed + sz))
+        fi
+    done
+    echo "  删除 $tmp_count 个临时文件"
+    echo ""
+
+    # 3. 裁剪大日志
+    echo "[3/4] 清理日志..."
+    local log_count=0
+    for f in "$DIR"/*.log; do
+        if [ -f "$f" ]; then
+            local sz=$(wc -c < "$f")
+            if [ "$sz" -gt 102400 ]; then
+                tail -50 "$f" > "$f.tail" 2>/dev/null
+                mv "$f.tail" "$f" 2>/dev/null
+                local new_sz=$(wc -c < "$f")
+                local saved=$((sz - new_sz))
+                total_freed=$((total_freed + saved))
+                log_count=$((log_count + 1))
+                echo "  trim $(basename "$f") (saved $saved bytes)"
+            fi
+        fi
+    done
+    echo "  裁剪 $log_count 个日志"
+    echo ""
+
+    # 4. 空间统计
+    echo "[4/4] 空间统计..."
+    if [ -d "$DIR" ]; then
+        echo "  目录大小: $(du -sh "$DIR" 2>/dev/null | cut -f1)"
+        echo "  文件数量: $(ls "$DIR" 2>/dev/null | wc -l)"
+    fi
+    echo ""
+    local freed_kb=$((total_freed / 1024))
+    echo "╔══════════════════════════════════════╗"
+    printf "║  释放空间: %-26s║\n" "$freed_kb KB"
+    echo "╚══════════════════════════════════════╝"
+}
+
+# ── 设置沙盒地址 ──
+do_seturl() {
+    if [ -z "$1" ]; then
+        echo "用法: xm seturl https://xxx.lhr.life"
+        echo "     xm seturl http://192.168.1.100:8080"
+        echo ""
+        if [ -f "$CACHE_FILE" ]; then
+            echo "当前地址: $(cat "$CACHE_FILE")"
+        else
+            echo "当前地址: (未设置)"
+        fi
+        return
+    fi
+    # 去除尾部斜杠
+    local url=$(echo "$1" | sed 's/\/$//')
+    echo "$url" > "$CACHE_FILE"
+    echo "✓ 沙盒地址已设置: $url"
+    echo "  验证连接..."
+    if check_url_alive "$url"; then
+        echo "  ✓ 连接成功!"
+    else
+        echo "  ⚠ 无法连接，请检查地址是否正确"
+    fi
+}
+
+# ── 设备OTA回滚状态 ──
+do_rollback() {
+    echo "=== OTA 回滚保护说明 ==="
+    echo ""
+    echo "设备端已启用OTA自动回滚保护:"
+    echo ""
+    echo "  1. OTA更新后，新固件进入 PENDING_VERIFY 状态"
+    echo "  2. 如果新固件正常运行10秒，自动标记为 VALID"
+    echo "  3. 如果新固件在10秒内崩溃或重启:"
+    echo "     → 引导加载器自动回滚到上一个正常固件"
+    echo ""
+    echo "  手动强制回滚 (需要USB连接设备):"
+    echo "    esptool.py --port /dev/ttyUSB0 erase_region 0x3D000 0x1000"
+    echo "    (擦除otadata分区，强制回到ota_0)"
+    echo ""
+    echo "  查看当前分区状态 (串口日志):"
+    echo "    xm log | grep OTA"
+    echo ""
+    echo "  当前固件版本: v$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['version'])" 2>/dev/null || echo 'unknown')"
+}
+
+# ── 自动检测更新: 云端版本→下载→检测设备→清理旧固件 ──
+do_check() {
+    echo "╔══════════════════════════════════════╗"
+    echo "║  XiaoMiaoOS 自动更新检测              ║"
+    echo "╚══════════════════════════════════════╝"
+    echo ""
+
+    # ── Step 1: 获取云端最新版本 ──
+    echo "[1/4] 检测云端最新版本..."
+    local url=$(get_url_cached 2>/dev/null)
+    if [ -z "$url" ]; then
+        echo "  ✗ 沙盒离线，无法检测云端版本"
+        echo ""
+        echo "  用 xm seturl <地址> 手动设置沙盒"
+        return 1
+    fi
+    save_url "$url"
+
+    # 拉取 version.json
+    curl -s --max-time 15 "$url/version.json" -o "$DIR/version.json.tmp" 2>/dev/null
+    if [ ! -s "$DIR/version.json.tmp" ]; then
+        echo "  ✗ version.json 下载失败"
+        rm -f "$DIR/version.json.tmp"
+        if [ -f "$DIR/version.json" ]; then
+            echo "  使用本地缓存的version.json"
+        else
+            return 1
+        fi
+    else
+        if ! python3 -c "import json;json.load(open('$DIR/version.json.tmp'))" 2>/dev/null; then
+            echo "  ✗ version.json 无效"
+            rm -f "$DIR/version.json.tmp"
+            return 1
+        fi
+        mv "$DIR/version.json.tmp" "$DIR/version.json"
+    fi
+
+    local cloud_ver=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['version'])" 2>/dev/null)
+    local cloud_name=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['ota']['name'])" 2>/dev/null)
+    local cloud_size=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['ota']['size'])" 2>/dev/null)
+    local cloud_sha=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['ota']['sha256'])" 2>/dev/null)
+    local cloud_url=$(python3 -c "import json;d=json.load(open('$DIR/version.json'));print(d['latest']['files']['ota']['url'])" 2>/dev/null)
+    echo "  ✓ 云端最新版本: v$cloud_ver"
+    echo "  文件: $cloud_name ($cloud_size bytes)"
+    echo ""
+
+    # ── Step 2: 检查本地是否已有该版本固件 ──
+    echo "[2/4] 检查本地固件..."
+    local fw_path="$FW_DIR/$cloud_name"
+    local need_download=true
+    if [ -f "$fw_path" ]; then
+        local local_size=$(wc -c < "$fw_path")
+        if [ "$local_size" = "$cloud_size" ]; then
+            echo "  ✓ 本地已有相同版本，跳过下载"
+            need_download=false
+        else
+            echo "  本地文件大小不匹配，重新下载"
+            rm -f "$fw_path"
+        fi
+    else
+        echo "  本地无此版本固件"
+    fi
+
+    # ── Step 3: 如果需要，从云端下载固件到本地 ──
+    if [ "$need_download" = "true" ]; then
+        echo ""
+        echo "[3/4] 从云端下载固件..."
+        mkdir -p "$FW_DIR"
+        local full_url="$url/$cloud_url"
+        echo "  下载: $full_url"
+        curl -s --max-time 120 "$full_url" -o "$fw_path.tmp" 2>/dev/null
+        if [ ! -s "$fw_path.tmp" ]; then
+            echo "  ✗ 下载失败"
+            rm -f "$fw_path.tmp"
+            return 1
+        fi
+        local dl_size=$(wc -c < "$fw_path.tmp")
+        if [ "$dl_size" != "$cloud_size" ]; then
+            echo "  ✗ 大小不匹配: 期望 $cloud_size, 实际 $dl_size"
+            rm -f "$fw_path.tmp"
+            return 1
+        fi
+        local dl_sha=$(sha256sum "$fw_path.tmp" | cut -d' ' -f1)
+        if [ "$dl_sha" != "$cloud_sha" ]; then
+            echo "  ✗ SHA256 校验失败"
+            rm -f "$fw_path.tmp"
+            return 1
+        fi
+        echo "  ✓ SHA256 校验通过"
+        mv "$fw_path.tmp" "$fw_path"
+        echo "  ✓ 下载完成 ($dl_size bytes)"
+    else
+        echo ""
+        echo "[3/4] 跳过下载（本地已有）"
+    fi
+    echo ""
+
+    # ── Step 4: 检测设备版本，如果已是最新则删除旧固件 ──
+    echo "[4/4] 检测设备版本..."
+    # 尝试连接设备 WebUI 获取版本号
+    # 先尝试 AP 模式 (192.168.4.1)，再尝试缓存URL解析出的IP
+    local device_ip="192.168.4.1"
+    local device_ver=""
+    local dev_resp=$(curl -s --max-time 5 "http://$device_ip/api/sysinfo" 2>/dev/null)
+    if [ -n "$dev_resp" ]; then
+        device_ver=$(echo "$dev_resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('version',''))" 2>/dev/null)
+    fi
+    # 如果AP模式连不上，尝试 STA 模式（从URL提取IP）
+    if [ -z "$device_ver" ]; then
+        # 从沙盒URL提取IP尝试，设备可能在同网段
+        local host=$(echo "$url" | grep -oP 'http://\K[0-9.]+' | head -1)
+        if [ -n "$host" ] && [ "$host" != "192.168.4.1" ]; then
+            dev_resp=$(curl -s --max-time 3 "http://$host/api/sysinfo" 2>/dev/null)
+            if [ -n "$dev_resp" ]; then
+                device_ver=$(echo "$dev_resp" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('version',''))" 2>/dev/null)
+            fi
+        fi
+    fi
+
+    if [ -n "$device_ver" ]; then
+        echo "  ✓ 设备版本: v$device_ver"
+        # 比较版本号
+        local dev_newer=false
+        local c1=0 c2=0 c3=0 d1=0 d2=0 d3=0
+        IFS='.' read c1 c2 c3 <<< "$cloud_ver"
+        IFS='.' read d1 d2 d3 <<< "$device_ver"
+        if [ "$d1" -gt "$c1" ] 2>/dev/null || \
+           ([ "$d1" -eq "$c1" ] && [ "$d2" -gt "$c2" ]) 2>/dev/null || \
+           ([ "$d1" -eq "$c1" ] && [ "$d2" -eq "$c2" ] && [ "$d3" -ge "$c3" ]) 2>/dev/null; then
+            dev_newer=true
+        fi
+
+        if [ "$dev_newer" = "true" ]; then
+            echo "  ✓ 设备已是最新版本！"
+            echo ""
+            echo "  清理旧版本固件..."
+            local deleted=0
+            local freed=0
+            for f in "$FW_DIR"/xiaomiao_ota_V*.bin "$FW_DIR"/xiaomiao_base_V*.bin "$FW_DIR"/xiaomiao_V*.bin; do
+                if [ -f "$f" ]; then
+                    local basename_f=$(basename "$f")
+                    # 保留当前版本文件
+                    if [ "$basename_f" != "$cloud_name" ]; then
+                        local sz=$(wc -c < "$f")
+                        rm -f "$f"
+                        echo "    del $basename_f ($sz bytes)"
+                        deleted=$((deleted + 1))
+                        freed=$((freed + sz))
+                    fi
+                fi
+            done
+            if [ "$deleted" -gt 0 ]; then
+                echo "  ✓ 删除 $deleted 个旧固件，释放 $((freed / 1024)) KB"
+            else
+                echo "  (无旧固件需要清理)"
+            fi
+            echo ""
+            echo "╔══════════════════════════════════════╗"
+            echo "║  ✓ 设备已是最新版本 v$device_ver              ║"
+            echo "║  旧固件已清理，无需操作              ║"
+            echo "╚══════════════════════════════════════╝"
+        else
+            echo "  ⚠ 设备版本 v$device_ver 低于云端 v$cloud_ver"
+            echo "  需要更新设备"
+            echo ""
+            echo "  固件已下载到本地:"
+            echo "  $fw_path"
+            echo ""
+            echo "  更新方式:"
+            echo "    A. USB刷入: xm flash"
+            echo "    B. 设备OTA: 菜单 SYSTEM → Check Update"
+            echo "    C. 设备已连WiFi时直接OTA:"
+            echo "       curl http://$device_ip/api/do_update?url=$url/$cloud_url"
+        fi
+    else
+        echo "  ⚠ 无法连接设备 (尝试了 192.168.4.1)"
+        echo "  设备可能未开机或未连接"
+        echo ""
+        echo "  固件已下载到本地:"
+        echo "  $fw_path"
+        echo ""
+        echo "  更新方式:"
+        echo "    A. USB刷入: xm flash"
+        echo "    B. 设备OTA: 菜单 SYSTEM → Check Update"
+    fi
+}
+
+# ── 主逻辑 ──
+# xm 已通过 install 部署为系统命令，不再自动下载自身
+
+case "${1:-run}" in
+    pull)     do_pull ;;
+    start)    do_start ;;
+    stop)     do_stop ;;
+    status)   do_status ;;
+    log)      do_log ;;
+    clean)    do_clean ;;
+    fw)       do_fw ;;
+    base)     do_base ;;
+    check)    do_check ;;
+    flash)    do_flash ;;
+    ports)    do_ports ;;
+    install)  do_install ;;
+    seturl)   do_seturl "$2" ;;
+    rollback) do_rollback ;;
+    update)   do_pull && do_stop && do_start ;;
+    run|"")   do_check && echo "" && do_pull && do_start ;;
+    *) echo "XiaoMiaoOS 快捷命令 v3.3"
+       echo ""
+       echo "用法: xm [命令]"
+       echo ""
+       echo "命令:"
+       echo "  xm          自动检测更新+拉取+启动 (默认)"
+       echo "  xm check    只检测更新(云端→下载→检测设备→清理)"
+       echo "  xm pull     只拉取脚本文件"
+       echo "  xm start    只启动"
+       echo "  xm stop     停止所有服务"
+       echo "  xm status   查看状态"
+       echo "  xm log      查看日志"
+       echo "  xm update   强制拉取+重启"
+       echo "  xm fw       拉取OTA更新包(固件)"
+       echo "  xm base     拉取底包(全量刷机包)"
+       echo "  xm flash    拉取固件+USB刷入设备"
+       echo "  xm ports    列出可用串口"
+       echo "  xm install  安装xm为系统命令"
+       echo "  xm clean    清理旧文件释放空间"
+       echo "  xm seturl   设置沙盒地址"
+       echo "  xm rollback 查看OTA回滚状态" ;;
+esac

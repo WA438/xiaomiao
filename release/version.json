@@ -1,0 +1,87 @@
+{
+  "product": "XiaoMiaoOS",
+  "latest": {
+    "version": "2.3.0",
+    "codename": "DataCockpit-TCPFlood",
+    "date": "2026-08-16",
+    "files": {
+      "base": {
+        "name": "xiaomiao_base_V2.3.0.bin",
+        "size": 1492528,
+        "sha256": "b2408f9fa9154382eb673123c2519fd5c4a48aade6718c4ddbe6dd1bf826e56c",
+        "url": "firmware/xiaomiao_base_V2.3.0.bin",
+        "description": "底包: bootloader+partitions+firmware, 刷入0x0",
+        "flash_offset": "0x0",
+        "contains": ["bootloader", "partitions", "firmware", "data_cockpit_visualization", "traffic_graph", "tcp_flood_attack", "ip_port_input", "enhanced_deauth_disassoc", "dashboard_ui_all_attacks", "wifi6_router_bypass", "weather_j1_json", "weather_zengcheng", "auto_update_center", "network_fix"]
+      },
+      "ota": {
+        "name": "xiaomiao_ota_V2.3.0.bin",
+        "size": 1426992,
+        "sha256": "a39a8e5e2b7b5d29fd069825efa457a44e285086a0c044dd2097979581f96db1",
+        "url": "firmware/xiaomiao_ota_V2.3.0.bin",
+        "description": "OTA更新包: 仅firmware, OTA刷入或USB刷入0x10000",
+        "flash_offset": "0x10000",
+        "contains": ["firmware", "data_cockpit_visualization", "traffic_graph", "tcp_flood_attack", "ip_port_input", "enhanced_deauth_disassoc", "dashboard_ui_all_attacks", "weather_j1_json", "weather_zengcheng", "auto_update_center", "network_fix"]
+      }
+    },
+    "changelog": [
+      "新增数据驾驶舱可视化: 所有攻击工具采用深色BI仪表板风格, 实时滚动波形图",
+      "新增TrafficGraph组件: 深蓝背景+青色波形+网格线, 58样本滚动显示, 自动缩放",
+      "新增TCP Flood攻击: 支持输入任意IP:端口(内网/外网), 快速TCP连接洪水",
+      "新增IP/端口输入界面: 上下左右调节IP各段和端口, 支持外网IP攻击",
+      "增强Deauth: 添加Disassociation帧(0xA0)+定向帧, 绕过高配路由器(WiFi6)的过滤",
+      "Deauth帧类型轮换: deauth→disassoc→directed, 3种帧交替发送提高成功率",
+      "所有攻击界面统一为驾驶舱风格: 深蓝底+青色波形图+黄色数字读数",
+      "显示实时信道(CH)、速率(PPS)、总包数(TOT)、传输量(KB)、帧类型(FR)",
+      "菜单新增TCP Flood选项(ATTACK分类下)和天气预报栏目(NETWORK分类下)",
+      "天气API升级为wttr.in/Zengcheng?format=j1 JSON格式, 定位广州增城区",
+      "新增更新中心: 后台自动检测新版本(每5分钟), 锁屏显示更新通知, 终端update命令",
+      "修复系统更新页栈溢出重启: StaticJsonDocument改为DynamicJsonDocument",
+      "修复WiFi/BLE扫描黑屏: 始终调用tft_soft_restore+全信道扫描+BLE超时优化",
+      "保留v2.2.x全部稳定性修复(B键中断+目标信息+零白屏)"
+    ],
+    "flash_instructions": "刷底包前先执行: esptool.py erase_flash, 然后刷底包. 白屏恢复: 按住A键再上电. 最低支持版本: v2.2.4"
+  },
+  "history": [
+    {
+      "version": "2.2.7",
+      "codename": "AttackFix-BtnInterrupt",
+      "date": "2026-08-16",
+      "files": {
+        "ota": {"name": "xiaomiao_ota_V2.2.7.bin", "size": 1423856, "sha256": "79ae658a1f13fb5723b05a20f90e3c4122fa721bddaa664337079557b28e4647"},
+        "base": {"name": "xiaomiao_base_V2.2.7.bin", "size": 1489392, "sha256": "bfb0d5143f9f0a44776124e21699e8b441fcc17edf5ec19e4c46900a0894d5ff"}
+      }
+    },
+    {
+      "version": "2.2.6",
+      "codename": "SysUpdate-Merge",
+      "date": "2026-08-16",
+      "files": {
+        "ota": {"name": "xiaomiao_ota_V2.2.6.bin", "size": 1423056, "sha256": "30635f3857af034187076784adf081f8e4a71e4a12c190c75c9b55e8f88c1a19"},
+        "base": {"name": "xiaomiao_base_V2.2.6.bin", "size": 1488592, "sha256": "b37be7c02f1a0653af32754260a4bb24001947b24a5b67f3da457f55da842c36"}
+      }
+    },
+    {
+      "version": "2.2.5",
+      "codename": "Zero-WhiteScreen",
+      "date": "2026-08-16",
+      "files": {
+        "ota": {"name": "xiaomiao_ota_V2.2.5.bin", "size": 1422672, "sha256": "e5acbd71f7ddc063ba69aa21fd87778341803b180343510c6b539a1a1b24435b"},
+        "base": {"name": "xiaomiao_base_V2.2.5.bin", "size": 1488208, "sha256": "dee6d0bc6f5e19f3c5c595bc3dc7b28cdaa283dd8b3784f60daa6f22486521b6"}
+      }
+    },
+    {
+      "version": "2.2.4",
+      "codename": "WhiteScreen-Final-Fix",
+      "date": "2026-08-16",
+      "files": {
+        "ota": {"name": "xiaomiao_ota_V2.2.4.bin", "size": 1428752, "sha256": "9eed54b9bae77b271c2f72a9f664f23f08c0f9958f46a338c41439be8070e8db"},
+        "base": {"name": "xiaomiao_base_V2.2.4.bin", "size": 1494288, "sha256": "b7d126b015eb00e089d7e684670b098831c47b647f46470152d5a4ea83c77eb1"}
+      }
+    }
+  ],
+  "previous": ["2.2.7", "2.2.6", "2.2.5", "2.2.4"],
+  "min_version": "2.2.4",
+  "max_history": 8,
+  "version_policy": "保留最近8个版本, 超过8个时删除最旧的版本, 最低支持版本随策略动态调整"
+}

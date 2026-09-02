@@ -1,0 +1,14 @@
+host: 0.0.0.0
+port: 8080
+server_name: "XiaoMiaoOS-Release"
+provider_mapping:
+  "/": "/workspace/esp32_xiaomiao/release"
+simple_dc:
+  user_mapping:
+    "*": true
+dir_browser:
+  enable: true
+  response_trailer: ""
+  enable_webdav_header: true
+  mount_path: "/"
+verbose: 1
