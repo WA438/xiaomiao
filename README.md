@@ -1,248 +1,247 @@
-XiaoMiaoOS 项目进度全览
-本文档供其他 AI 接手开发使用，包含完整项目状态、架构、已修复 bug 清单、已知问题和待办事项。
-最后更新：2026-08-16 | 当前版本：v2.1.3 | 固件大小：1,393,568 bytes (Flash 70.6%)
+XiaoMiaoOS项目进度全览本文档供开发使用，包含完整项目状态、架构、已修复 bug 清单、已知问题和待办事项。
+最后更新：2026-08-16|当前版本：v2.1.3|固件大小：1，393，568bytes(闪存70.6%)
 
 1. 项目概述
-XiaoMiaoOS 是一款基于 ESP32 的手持渗透测试设备固件，风格参考 ESP32 Marauder / Bruce。运行在自定义硬件上（ESP32 + ST7735 128x160 TFT + 6 按键 + SD 卡 + 蜂鸣器），提供 WiFi/BLE 侦察、攻击、防御、网络工具、WebUI 管理等功能。
+XiaoMiaoOS是一款基于ESP32的手持渗透测试设备固件，风格参考ESP32掠夺者/布鲁斯.运行在自定义硬件上(ESP32+ST7735128x160TFT+6按键+SD卡+蜂鸣器），提供WiFi/BLE侦察、攻击、防御、网络工具、WebUI管理等功能.
 
-设备通过 ZeroTermux（Android 上的 Termux）作为中继服务器，实现远程命令执行和固件 OTA 更新。
+设备通过ZeroTermux(安卓上的Termux)作为中继服务器，实现远程命令执行和固件OTA更新.
 
-2. 硬件配置
-MCU:     ESP32 (ESP32-dev, 4MB Flash)
-屏幕:    ST7735 128x160 (SPI, 旋转90°)
-按键:    6个 (UP/DOWN/LEFT/RIGHT/A/B)
-SD卡:    SPI 接口
-蜂鸣器:  GPIO14 (LEDC PWM)
-电池:    ADC GPIO39 (2:1 分压)
-引脚定义 (config.h)
-功能	GPIO	说明
-TFT_CS	5	TFT 片选
-TFT_DC	4	TFT 数据/命令
-TFT_RST	19	TFT 复位 (与 SD_MISO 共用！)
-SD_CS	22	SD 片选
+2.硬件配置
+MCU:ESP32(ESP32-dev，4MB闪存)
+屏幕：ST7735128x160(SPI，旋转90°)
+按键：6个(UP/DOWN/LEFT/RIGHT/A/B)
+SD卡：SPI接口
+蜂鸣器：GPIO14(LEDC PWM)
+电池：ADC GPIO39(2:1分压)
+引脚定义(config.h)
+功能GPIO说明
+TFT_CS5TFT片选
+TFT_DC4TFT数据/命令
+TFT_RST19TFT复位(与SD_MISO共用！)
+SD_CS22SD片选
 SD_MOSI	23	SPI MOSI
-SD_MISO	19	SPI MISO (与 TFT_RST 共用！)
+SD_MISO19SPI MISO(与TFT_RST共用！)
 SD_SCK	18	SPI 时钟
-BTN_UP	2	上
-BTN_DOWN	13	下
-BTN_LEFT	27	左
-BTN_RIGHT	35	右
+BTN_UP2上
+BTN_DOWN13下
+BTN_LEFT27左
+BTN_RIGHT35右
 BTN_A	34	A (确认)
 BTN_B	12	B (返回)
-BUZZER	14	蜂鸣器
-BAT_PIN	39	电池电压 ADC
-重要硬件约束：TFT_RST (GPIO19) 与 SD_MISO (GPIO19) 共用同一引脚。SD 卡初始化会导致 TFT 复位（白屏闪烁）。所有使用 SD 的功能在初始化后必须调用 tft_restore() 恢复显示。
+蜂鸣器14蜂鸣器
+bat_PIN39电池电压ADC
+重要硬件约束：TFT_RST(GPIO19)与SD_MISO(GPIO19)共用同一引脚.SD卡初始化会导致TFT复位(白屏闪烁).所有使用SD的功能在初始化后必须调用TFT_restore()恢复显示。
 
 3. 软件架构
 3.1 源文件结构
 src/
-├── config.h       (210行)  硬件配置、枚举、结构体、全局变量声明
-├── main.cpp       (4556行) 主程序：UI、攻击、防御、WebUI、OTA、启动
-├── terminal.cpp   (672行)  Telnet 服务器、终端命令处理
-├── screen.cpp     (309行)  屏幕初始化、状态栏、文本裁剪、TFT 恢复
-├── menu.cpp       (215行)  菜单导航系统
-├── buttons.cpp    (132行)  按键驱动（去抖、长按、重复）
-├── buzzer.cpp     (96行)   蜂鸣器驱动（LEDC PWM）
-├── buttons.h      (67行)   按键接口
-├── buzzer.h       (58行)   蜂鸣器接口
-├── menu.h         (11行)   菜单接口
-├── screen.h       (22行)   屏幕接口
-└── terminal.h     (21行)   终端接口
+├--config.h(210行)硬件配置、枚举、结构体、全局变量声明
+├--main.cpp(4556行)主程序：UI、攻击、防御、WebUI、OTA、启动
+├--终端.CPP(672行)telnet服务器、终端命令处理
+├--screen.cpp(309行)屏幕初始化、状态栏、文本裁剪、TFT恢复
+├--menu.cpp(215行)菜单导航系统
+├--按钮.CPP(132行)按键驱动(去抖、长按、重复)
+├--蜂鸣器驱动(LEDC PWM)
+├--按钮.H(67行)按键接口
+├-蜂鸣器.h(58行)蜂鸣器接口
+├--菜单.H(11行)菜单接口
+├--screen.h(22行)屏幕接口
+└--终端.H(21行)终端接口
 总计约 6,369 行代码。
 
 3.2 关键全局变量
-// WiFi 状态
+//WiFi状态
 Page g_page;              // 当前页面
-WifiMode g_wifi_mode;     // WM_OFF / WM_STA / WM_AP
-bool g_wifi_conn;         // WiFi STA 是否已连接
-bool g_ble_on;            // BLE 是否已初始化
-AtkState g_wifi_atk;      // WiFi 攻击状态
-AtkState g_ble_atk;       // BLE 攻击状态
-AtkState g_wifi_def;      // 防御模式状态
+WifiMode g_wifi_mode；//WM_OFF/WM_STA/WM_AP
+bool g_wifi_conn；//WiFi STA是否已连接
+bool GBLE_on；//BLE是否已初始化
+AtkState g_wifi_atk；//WiFi攻击状态
+AtkState g_ble_atk；//BLE攻击状态
+AtkState g_wifi_def；//防御模式状态
 
-// 计数器 (volatile - 在 promiscuous 回调中写入)
-volatile uint32_t g_packets_blocked;  // 被阻断的攻击包数
-volatile uint32_t g_traffic_rx;       // 接收流量计数
-volatile uint32_t g_traffic_tx;       // 发送流量计数
-uint32_t g_packets_sent;              // 发送的攻击包数
-uint32_t g_beacons_sent;              // 发送的 beacon 数
-uint32_t g_ble_spam_cnt;             // BLE spam 计数
+//计数器(挥发性-在混杂的回调中写入)
+volatile uint32_t g_packets_blocked；//被阻断的攻击包数
+volatile uint32_t g_traffic_rx；//接收流量计
+volatile uint32_t g_traffic_tx；//传输流量计
+uint32_t g_packets_sent；//发送的攻击包数
+uint32_t g_beacons_sent；//发送的beacon数
+uint32_t g_ble_spam_cnt；//BLE spam计数
 
-// AP 配置 (非 static，供 terminal.cpp 引用)
-char g_web_ap_ssid[33] = "XiaoMiao-CFG";
-char g_web_ap_pass[33] = "xiaomiao123";
-uint8_t g_web_ap_ch = 1;
-uint8_t g_web_ap_max_cli = 8;
-bool g_web_ap_hidden = false;
+//AP配置(非静态的，供终端.cpp引用)
+char g_web_ap_ssid[33]="XiaoMiao-CFG"；
+char g_web_ap_pass[33]="xiaomiao123"；
+uint8_t g_web_ap_ch=1；
+uint8_t g_web_ap_max_cli=8；
+bool g_web_ap_hidden=false；
 
-// STA 凭据 (家庭 WiFi)
-char g_sta_ssid[33] = "ye";      // ← 硬编码，应改为 NVS 持久化
-char g_sta_pass[33] = "82813269";
+//STA凭据(家庭WiFi)
+char g_st_ssid[33]="ye"；//←硬编码，应改为NVS持久化
+char g_sta_pass[33]= "82813269";
 
-// OTA 更新 URL (通过 NVS 持久化)
+//ota更新url(通过nvs持久化)
 char g_update_url[256];
 
-// SD 卡状态
-bool sd_ok = false;
-3.3 页面/功能路由 (main.cpp loop() switch)
-页面枚举	功能
-PG_LOCK	锁屏：时钟 + 系统状态 + 流量监控
-PG_MENU	主菜单导航
-PG_RECON_WIFI	WiFi 扫描 + 详情查看
-PG_RECON_BLE	BLE 扫描
-PG_RECON_WARD	WarDrive（GPS 记录，需硬件支持）
-PG_ATTK_DEAUTH	Deauth 攻击
-PG_ATTK_BEACON	Beacon Spam
-PG_ATTK_PORTAL	Evil Portal (Captive Portal)
-PG_ATTK_BLE	BLE Spam
-PG_ATTK_BADUSB	BLE BadUSB HID 键盘注入
-PG_ATTK_DEFENSE	防御模式 (Deauth 检测)
-PG_NET_HOST	主机扫描 (ARP)
-PG_NET_TCP	TCP 探测
-PG_NET_TRAFFIC	流量监控
-PG_EXPLOIT	PCAP / 凭证查看
-PG_SYS_FILES	SD 文件浏览器
-PG_SYS_WEBUI	WebUI（AP 模式 + Web 服务器）
-PG_SYS_TERM	Telnet 终端
-PG_SYS_TIME	时间 / NTP 设置
-PG_SYS_BRIGHT	亮度调节
-PG_SYS_BUZZER	蜂鸣器开关
-PG_SYS_REBOOT	重启
-PG_ABOUT	设备信息
-3.4 启动流程 (setup())
-1. Serial 初始化 (115200)
-2. buttons_init()
-3. buzzer_init()
-4. scr_init()           ← TFT 初始化
-5. sd_init()            ← SD 卡初始化（会重置 TFT）
-6. tft_restore()        ← 恢复 TFT 显示
-7. boot_screen()        ← 开机动画（此时显示已稳定）
-8. WiFi STA 连接（10s 超时）
-   ├── 成功 → NTP 同步 → boot_check_update() → tft_restore()
-   └── 失败 → 回退 AP 模式 → tft_restore()
-9. menu_init() → PG_LOCK
+//sd卡状态
+XiaoMiaoOS项目进度全览本文档供开发使用，包含完整项目状态、架构、已修复 bug 清单、已知问题和待办事项。
+XiaoMiaoOS是一款基于ESP32的手持渗透测试设备固件，风格参考ESP32掠夺者/布鲁斯.运行在自定义硬件上(ESP32+ST7735128x160TFT+6按键+SD卡+蜂鸣器），提供WiFi/BLE侦察、攻击、防御、网络工具、WebUI管理等功能.
+设备通过ZeroTermux(安卓上的Termux)作为中继服务器，实现远程命令执行和固件OTA更新.
+按键：6个(UP/DOWN/LEFT/RIGHT/A/B)
+PG_MENU主菜单导航
+PG_RECON_WIFI WiFi扫描+详情查看
+PG_RECON_BLE BLE扫描
+PG_RECON_WARD Wardrive(GPS记录，需硬件支持）
+PG_attk_deauth deauth攻击
+PG_attk_BEACON信标垃圾邮件
+PG_attk_PORTAL邪恶门户(强制门户)
+PG_attk_BLE BLE垃圾邮件
+PG_attk_BadUSB BLE BadUSB HID键盘注入
+PG_attk_DEFENSE防御模式（deauth检测）
+PG_NET_HOST主机扫描(arp)
+PG_NET_TCP TCP探测
+PG_NET_TRAFFIC流量监控
+PG_EXPLOIT PCAP/凭证查看
+PG_SYS_FILES SD文件浏览器
+PG_SYS_WebUI WebUI(AP模式+Web服务器)
+PG_SYS_TERM Telnet终端
+PG_SYS_TIME时间/NTP设置
+PG_SYS_BRIGHT亮度调节
+PG_SYS_BUZZER蜂鸣器开关
+PG_SYS_REBOOT重启
+设备通过ZeroTermux(安卓上的Termux)作为中继服务器，实现远程命令执行和固件OTA更新.
+重要硬件约束：TFT_RST(GPIO19)与SD_MISO(GPIO19)共用同一引脚.SD卡初始化会导致TFT复位(白屏闪烁).所有使用SD的功能在初始化后必须调用TFT_restore()恢复显示。
+1.serial初始化(115200)
+2.按钮_init()
+3.buzzer_init()
+4.SCR_init()←TFT初始化
+5.SD_init()←SD卡初始化(会重置TFT)
+6.TFT_restore()←恢复TFT显示
+7.boot_screen()←开机动画(此时显示已稳定)
+8.WiFi STA连接(10s超时)
+├--成功→NTP同步→boot_check_update()→tft_restore()
+└--失败→回退AP模式→TFT_restore()
+9.menu_init()→PG_LOCK
 4. 功能清单
 4.1 侦察
-WiFi Scan：扫描附近 AP，显示 SSID/BSSID/信道/RSSI/加密类型，可选中查看详情
-BLE Scan：NimBLE 被动扫描 30 秒，显示设备名/RSSI
-WarDrive：GPS 记录（需硬件 GPS 模块）
+WiFi扫描：扫描附近AP，显示SSID/BSSID/信道/RSSI/加密类型，可选中查看详情
+BLE Scan:NimBLE被动扫描30秒，显示设备名/RSSI
+Wardrive:GPS记录(需硬件gps模块)
 4.2 攻击
-Deauth：发送 802.11 Deauth 帧，断开目标 WiFi 连接
-Beacon Spam：广播大量伪造 SSID 的 Beacon 帧
-Evil Portal：Captive Portal 钓鱼（DNS 劫持 + Web 表单）
-BLE Spam：BLE 广播垃圾包
-BadUSB：BLE HID 键盘注入，支持 Ducky Script（SD:/badusb_script.txt）
+deauth：发送802.11deauth帧，断开目标WiFi连接
+信标垃圾邮件：广播大量伪造SSID的灯塔帧
+邪恶门：捕鱼门钓鱼(dns劫持+web表格)
+BLE垃圾邮件：BLE广播垃圾包
+BadUSB:BLE HID键盘注入，支持Ducky Script(SD:/BadUSB_script.txt)
 
-指令：STRING:、DELAY:、ENTER、TAB、ESC、GUI、CTRL、ALT
+指令：string：、DELAY：、ENTER、TAB、ESC、GUI、CTRL、ALT
 
 
 4.3 防御
-Defense Mode：Promiscuous 模式监听 Deauth/Disassoc 帧，蜂鸣器报警 + 计数
+防御模式：淫乱模式监测deauth/Disassoc带、蜂鸣器报警+计数
 4.4 网络工具
-Host Scan：ARP 扫描局域网存活主机
-TCP Probe：TCP 端口探测
-Traffic Monitor：实时流量监控（RX/TX 包计数）
-Port Scan：终端 portscan <ip> [start] [end]，最多 100 端口
+主机扫描：ARP扫描局域网存活主机
+TCP探测：TCP端口探测
+Traffic Monitor：实时流量监控(RX/TX包计数)
+端口扫描：终端portscan<互联网协议>[开始] [结束]，最多 100 端口
 4.5 系统功能
 SD 文件浏览器：浏览/查看/删除文件
-WebUI：AP 模式 + Web 服务器（端口 80），Neo 暗黑主题设计
-Telnet 终端：端口 23，远程命令执行
-NTP 时间同步：终端 ntpdate
+WebUI:AP模式+Web服务器(端口80)，Neo暗黑主题设计
+telnet终端：端口23，远程命令执行
+NTP时间同步：终端ntpdate
 亮度调节、蜂鸣器开关、重启
-4.6 WebUI 功能
+4.6WebUI功能
 侧边栏导航 + 暗黑卡片网格
-实时仪表盘：RAM/Flash/WiFi 状态磁贴
-WiFi 扫描 + 连接管理
-BLE 扫描
-端口扫描（Web 端）
+实时仪表盘：RAM/闪存/WiFi状态磁贴
+WiFi扫描+连接管理
+BLE扫描
+端口扫描(Web端)
 Web 文件管理器：上传/下载/删除/目录浏览
 一键 OTA 固件更新
-BadUSB 脚本编辑/保存
-终端 WebSocket
-4.7 WebUI API 端点
+BadUSB剧本编辑/保存
+终端WebSocket
+4.7WebUI API端点
 端点	方法	功能
-/	GET	主页（HTML）
-/api/sysinfo	GET	系统信息（RAM/Flash/WiFi/版本/状态）
-/api/wifi_scan	GET	WiFi 扫描结果
-/api/wifi_connect	GET	连接 WiFi（?ssid=&pass=）
-/api/wifi_mode	GET	查询/设置 WiFi 模式
-/api/ble_scan	GET	BLE 扫描结果
-/api/portscan	GET	端口扫描（?ip=&start=&end=）
-/api/files	GET	列出 SD 文件
-/api/files/delete	GET	删除文件（?path=）
-/api/files/mkdir	GET	创建目录（?path=）
-/api/files/download	GET	下载文件（?path=）
-/api/files/upload	POST	上传文件
-/api/badusb_save	POST	保存 BadUSB 脚本
-/api/check_update	GET	检查固件更新
-/api/do_update	GET	执行 OTA 更新
-/api/update_url	GET	获取/设置更新 URL（?url=）
-/api/sd_bins	GET	列出 SD 卡 .bin 文件
+/GET主页(HTML)
+/api/sysinfo GET系统信息(RAM/闪存/WiFi/版本/状态）
+/api/wifi_scan GET WiFi扫描结果
+/api/wifi_connect GET连接WiFi(？SSID=&pass=)
+/api/wifi_mode GET查询/设置WiFi模式
+/api/ble_scan GET BLE扫描结果
+/api/portscan GET端口扫描(？ip=&start=&end=)
+/api/files GET列出SD文件
+/api/files/delete GET删除文件（？路径=)
+/api/文件/mkdir GET创建目录（？路径=）
+/api/files/download GET下载文件（？路径=)
+/api/文件/上传POST上传文件
+/api/badusb_save POST保存BadUSB脚本
+/api/check_update GET检查固件更新
+/api/do_update GET执行OTA更新
+/api/update_url GET获取/设置更新URL(？url=)
+/api/sd_bin GET列出SD卡.bin文件
 4.8 终端命令
 命令	功能
-ls [path]	列出目录
-cat <file>	查看文件内容（最多 200 行）
-rm <file>	删除文件
-mkdir <dir>	创建目录
-rmdir <dir>	删除目录
-cd <path>	切换目录
+LS[路径]	列出目录
+猫<文件>	查看文件内容（最多 200 行）
+RM<文件>	删除文件
+mkdir<Dir>创建目录
+rmdir<Dir>删除目录
+CD<路径>切换目录
 pwd	当前目录
-wget <url> [name]	HTTP 下载到 SD（15s 超时）
-wifi scan	WiFi 扫描
-wifi connect <ssid> <pass>	连接 WiFi
-ifconfig	网络接口信息
-portscan <ip> [start] [end]	端口扫描
-ntpdate	NTP 时间同步
-free	内存信息
-df	SD 卡空间
-sysinfo	系统信息
-reboot	重启
-help	帮助
+wget<URL> [姓名]HTTP下载到SD(15s超时）
+WiFi扫描WiFi扫描
+WiFi连接<SSID><通过>连接WiFi
+ifconfig网络接口信息
+portscan<互联网协议>[开始] [结束]	端口扫描
+ntpdate NTP时间同步
+免费的内存信息
+DF SD卡空间
+sysinfo系统信息
+重新启动重启
+帮助帮助
 4.9 开机自动检查更新 (v2.1.3 新增)
-WiFi 连接成功 →
-  请求 g_update_url 获取 version.json →
-  解析 latest.version，与 FW_VERSION 比较 →
-  有新版本 →
+WiFi连接成功→
+请求g_update_url获取version.json→
+解析最新版本，与FW_VERSION比较→
+有新版本 →
     显示：版本号/代号/日期/大小/更新日志(最多5条) →
-    用户选择：A:立即更新 / B:跳过 →
-    A → 下载固件 + Update.write() + 进度条 → ESP.restart()
-    B → 继续启动
-  已是最新 → 显示 "Already latest!" 1秒后继续
-5. ZeroTermux 中继系统
+用户选择：A：立即更新/B：跳过→
+a→下载固件+Update.write()+进度条→ESP.restart()
+B→继续启动
+已是最新→显示"已最新！"1秒后继续
+5.ZeroTermux中继系统
 5.1 架构
-[ESP32 设备] ←WiFi→ [手机热点] ←→ [ZeroTermux (Termux)]
-                                      ├── WebDAV Server (端口 8080)  ← 固件分发
-                                      └── Relay Server (端口 8090)   ← 命令中继
-5.2 文件 (release/ 目录)
+[ESP32设备]←WiFi→[手机热点]←→[ZeroTermux(Termux)]
+├--WebDAV服务器(端口8080)←固件分发
+└-relay服务器(端口8090)←指令中继
+5.2文件(发布/目录)
 文件	功能
-webdav_server.py	WebDAV 服务器 + 命令中继（Python）
-relay_server.sh	Bash 中继守护进程
-start_all.sh	一键整理+启动+开机自启
-zerotermux_setup.sh	ZeroTermux 环境初始化
-version.json	固件版本清单
-firmware/*.bin	固件二进制文件（v2.0.0 ~ v2.1.3）
+WebDAV_server.py WebDAV服务器+命令中继(Python)
+relay_server.sh Bash中继守护进程
+start_all.sh一键整理+启动+开机自启
+zerotermux_setup.sh ZeroTermux环境初始化
+version.json固件版本清单
+固件/*.bin固件二进制文件(v2.0.0~v2.1.3)
 5.3 自动启动
-Termux:Boot：手机开机时自动启动 start_all.sh
+Termux：引导：手机开机时自动启动start_all.sh
 .bashrc：每次打开终端检测服务是否运行，未运行则启动
 6. 构建配置
-6.1 platformio.ini
-[env:xiaomiao]
-platform = espressif32@5.3.0
-board = esp32dev
-framework = arduino
-monitor_speed = 115200
-board_build.partitions = partitions_ota.csv
-upload_speed = 921600
-board_build.flash_mode = dio
-board_build.f_flash = 80000000L
-6.2 分区表 (partitions_ota.csv)
+6.1platformio.ini
+[env：小苗]
+平台=espressif32@5.3.0
+board=esp32dev
+framework=arduino
+monitor_speed=115200
+WiFi扫描+连接管理
+upload_speed=921600
+board_build.flash_mode=dio
+board_build.f_flash=80000000L
+6.2分区表(partitions_ota.csv)
 分区	偏移	大小	用途
-nvs	0x9000	0x5000 (20KB)	非易失性存储
+nvs0x90000x5000(20kb)非易失性存赚
 otadata	0xe000	0x2000 (8KB)	OTA 数据
-app0	0x10000	0x1E0000 (1.875MB)	OTA 分区 0
-app1	0x1F0000	0x1E0000 (1.875MB)	OTA 分区 1
-spiffs	0x3D0000	0x20000 (128KB)	SPIFFS
-coredump	0x3F0000	0x10000 (64KB)	核心转储
+app0	0x10000	0x1E0000(1.875MB)OTA分区0
+app10x1F000000x1E0000(1.875MB)OTA分区1
+spiffs0x3D000000x20000(128KB)spiffs
+coredump0x3F000000x10000(64KB)核心转储
 6.3 依赖库
 库	版本	用途
 TFT_eSPI	^2.5.43	ST7735 显示驱动
